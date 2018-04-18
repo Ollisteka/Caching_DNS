@@ -10,7 +10,7 @@ namespace Caching_DNS.DnsQueries
 
         public override string ToString()
         {
-            return $"{Name}  {Class.Description()}  {Type.Description()}";
+            return $"{Name} {Type.Description()}  {Class.Description()}";
         }
     }
 }
