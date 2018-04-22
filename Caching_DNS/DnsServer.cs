@@ -13,20 +13,21 @@ using Newtonsoft.Json;
 
 namespace Caching_DNS
 {
-
     public class DnsServer
     {
-        private Dictionary<string, List<ResourseRecord>> DomainToIpCache = new Dictionary<string, List<ResourseRecord>>();
+        private Dictionary<string, List<ResourseRecord>> DomainToIpCache =
+            new Dictionary<string, List<ResourseRecord>>();
+
         private readonly DnsPacketParser packetParser = new DnsPacketParser();
         private UdpListener udpListener;
         private bool closed = false;
         private const string D2IFilename = "D2I.json";
-        private const string I2DFilename = "I2D.json";
         private IPEndPoint remoteDns = new IPEndPoint(IPAddress.Parse("8.8.8.8"), 53);
+
         public void Run()
         {
-           // DomainToIpCache = DeserializeCache(D2IFilename);
-           // IpToDomainCache = DeserializeCache(I2DFilename);
+            // DomainToIpCache = DeserializeCache(D2IFilename);
+            // IpToDomainCache = DeserializeCache(I2DFilename);
 
             using (udpListener = new UdpListener(new IPEndPoint(IPAddress.Loopback, 53)))
             {
@@ -42,7 +43,6 @@ namespace Caching_DNS
 
         private static void RemoveOldEntries(Dictionary<string, List<ResourseRecord>> cache)
         {
-            
             foreach (var record in cache)
                 for (int i = record.Value.Count - 1; i >= 0; i--)
                 {
@@ -54,41 +54,41 @@ namespace Caching_DNS
                     }
                 }
         }
-        private void HandleRequest(IPEndPoint sender, byte[] data)
+
+        private byte[] HandleRequest(IPEndPoint sender, byte[] data)
         {
             var packet = packetParser.Parse(data);
 
-            Console.WriteLine(packet);
+            Console.WriteLine($"GOT:\n{packet}");
 
             if (packet.IsQuery)
             {
                 foreach (var question in packet.Questions)
                 {
-                    if (DomainToIpCache.ContainsKey(question.Name))
+                    if (question.Type != ResourceType.A && question.Type != ResourceType.NS)
                     {
-                        using (var client = new UdpClient())
-                        {
-                            client.Send(new byte[48], 48, sender);
-                        }
+                        Console.Error.WriteLine(
+                            $"Message with the type code {question.Type} is not currently supported!");
+                        continue;
                     }
-                    else
+
+                    //if (DomainToIpCache.ContainsKey(question.Name))
+                    //{
+                    //    return new byte[48];
+                    //}
+
+                    using (var client = new UdpClient())
                     {
-                        using (var client = new UdpClient())
-                        {
-                            client.Send(data, data.Length, remoteDns);
-                            var response = client.Receive(ref remoteDns);
-                            var responsePacket = packetParser.Parse(response);
-
-                            Console.WriteLine(responsePacket);
-
-                            Console.WriteLine($"Sending answer back to {sender}\n\n");
-                            client.Send(response, response.Length, sender);
-                           // DomainToIpCache.Add(question.Name, responsePacket.Answers);
-                        }
+                        client.Send(data, data.Length, remoteDns);
+                        var response = client.Receive(ref remoteDns);
+                        var responsePacket = packetParser.Parse(response);
+                        Console.WriteLine($"RECEIVED:\n{responsePacket}");
+                        return response;
                     }
                 }
             }
-            
+
+            return null;
         }
 
         public void Quit()
@@ -96,8 +96,8 @@ namespace Caching_DNS
             closed = true;
             udpListener?.Dispose();
             Console.WriteLine("Saving data to ***...");
-          //  SerializeCache(DomainToIpCache, D2IFilename);
-           // SerializeCache(IpToDomainCache, I2DFilename);
+            //  SerializeCache(DomainToIpCache, D2IFilename);
+            // SerializeCache(IpToDomainCache, I2DFilename);
         }
 
         private void SerializeCache(Dictionary<string, ResourseRecord> cache, string filename)
@@ -118,7 +118,6 @@ namespace Caching_DNS
             {
                 return new Dictionary<string, ResourseRecord>();
             }
-            
         }
     }
 }
