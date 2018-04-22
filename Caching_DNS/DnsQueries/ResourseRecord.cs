@@ -44,12 +44,12 @@ namespace Caching_DNS.DnsQueries
 
         public static ResourseData ParseAddressRecord(byte[] data, int offset)
         {
-            uint addressBytes = BitConverter.ToUInt32(data, offset);
+            var addressBytes = BitConverter.ToUInt32(data, offset);
             var address = new IPAddress(addressBytes);
             return new ResourseData(address);
         }
 
-        public static ResourseData ParseNameServer(byte[] data, int offset)
+        public static ResourseData ParseNameServer(byte[] data, ref int offset)
         {
             var name = DnsPacket.ExtractString(data, ref offset);
             return new ResourseData(nameServer:name);

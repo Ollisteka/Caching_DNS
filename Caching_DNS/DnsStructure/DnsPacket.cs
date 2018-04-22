@@ -43,28 +43,13 @@ namespace Caching_DNS.DnsStructure
             var result = new StringBuilder("---\n");
 
             if (QuestionNumber != 0)
-            {
-                result.AppendLine("Questions: ");
-                foreach (var question in Questions)
-                    result.AppendLine(question.ToString());
-                result.AppendLine();
-            }
+                result.AppendLine($"Questions:\n{string.Join("\n", Questions)}\n");
 
             if (AnswersNumber != 0)
-            {
-                result.AppendLine("Answers:");
-                foreach (var answer in Answers)
-                    result.AppendLine(answer.ToString());
-                result.AppendLine();
-            }
+                result.AppendLine($"Answers:\n{string.Join("\n", Answers)}\n");
 
             if (AuthorityNumber != 0)
-            {
-                result.AppendLine("Authorative nameservers:");
-                foreach (var serverRecord in AuthoritiveServers)
-                    result.AppendLine(serverRecord.ToString());
-                result.AppendLine();
-            }
+                result.AppendLine($"Authorative nameservers:\n{string.Join("\n", AuthoritiveServers)}\n");
 
             result.AppendLine("---");
             return result.ToString();
@@ -100,17 +85,27 @@ namespace Caching_DNS.DnsStructure
                 var dataLength = BitConverter.ToUInt16(Data, totalOffset);
                 totalOffset += 2;
                 ResourseData data = null;
-                if(type == ResourceType.A )
-                    data = ResourseData.ParseAddressRecord(Data, totalOffset);
-                else if (type == ResourceType.NS || type == ResourceType.SOA)
-                    data = ResourseData.ParseNameServer(Data, totalOffset);
-                totalOffset += 4;
+                switch (type)
+                {
+                    case ResourceType.A:
+                        data = ResourseData.ParseAddressRecord(Data, totalOffset);
+                        break;
+                    case ResourceType.NS:
+                        data = ResourseData.ParseNameServer(Data, ref totalOffset);
+                        break;
+                    default:
+                        Console.Error.WriteLine($"Message with the type code {Convert.ToString((int)type, 16)} is not currently supported!");
+                        data = ResourseData.ParseAddressRecord(Data, totalOffset);
+                        break;
+                }
                 list.Add(new ResourseRecord(name, type, resClass, ttl, dataLength, data));
             }
+            
         }
 
         private void ParseQuestions()
         {
+
             for (var i = 0; i < QuestionNumber; i++)
             {
                 var question = new Question();
@@ -123,7 +118,7 @@ namespace Caching_DNS.DnsStructure
             }
         }
 
-        public static string ExtractString(byte[] data, ref int offset, bool calledFromMethod=false)
+        public static string ExtractString(byte[] data, ref int offset)
         {
             var result = new StringBuilder();
             var compressionOffset = -1;
@@ -131,26 +126,24 @@ namespace Caching_DNS.DnsStructure
             {
                 var nextLength = data[offset];
 
-                if ((nextLength & 0b1100_0000) == 0b1100_0000)
+                if (nextLength == 0xc0)
                 {
+                    var firstPart = nextLength & 0b0011_1111;
                     offset++;
-                    if (compressionOffset == -1)
+                    if (compressionOffset == -1) 
                         compressionOffset = offset;
                     
-
-                    
-                    offset = data[offset];
+                    offset = (firstPart << 8) | data[offset];
                     nextLength = data[offset];
                 }
                 else if (nextLength == 0)
                 {
                     if (compressionOffset != -1)
                         offset = compressionOffset;
-                    
+
                     offset++;
                     break;
                 }
-              
                 
                 offset++;
                 result.Append($"{Encoding.UTF8.GetString(data, offset, nextLength)}.");
