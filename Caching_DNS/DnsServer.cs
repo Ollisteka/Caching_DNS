@@ -1,35 +1,41 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.ComponentModel;
 using System.IO;
 using System.Net;
 using System.Net.Sockets;
+using System.Runtime.Serialization;
+using System.Runtime.Serialization.Formatters.Binary;
 using System.Threading;
 using System.Threading.Tasks;
 using Caching_DNS.DnsQueries;
 using Caching_DNS.DnsStructure;
 using Caching_DNS.Helpers;
 using Caching_DNS.Network;
-using NetTopologySuite.IO;
-using Newtonsoft.Json;
 
 namespace Caching_DNS
 {
     public class DnsServer
     {
-        private Dictionary<string, DnsPacket> DomainToIpCache =
-            new Dictionary<string, DnsPacket>();
 
-        private readonly DnsPacketParser packetParser = new DnsPacketParser();
-        private UdpListener udpListener;
-        private bool closed = false;
-        private const string D2IFilename = "D2I.json";
+        private readonly Dictionary<string, DnsPacket> CacheForTypeA;
+
+        private readonly Dictionary<string, DnsPacket> CacheForTypeNs;
+
+        private const string AFilename = "CacheA.dat";
+        private const string NsFilename = "CacheNs.dat";
+
+        private bool closed;
         private IPEndPoint remoteDns = new IPEndPoint(IPAddress.Parse("8.8.8.8"), 53);
+        private UdpListener udpListener;
+
+        public DnsServer()
+        {
+            CacheForTypeA = DeserializeCache(AFilename);
+            CacheForTypeNs = DeserializeCache(NsFilename);
+        }
 
         public void Run()
         {
-            // DomainToIpCache = DeserializeCache(D2IFilename);
-            // IpToDomainCache = DeserializeCache(I2DFilename);
 
             using (udpListener = new UdpListener(new IPEndPoint(IPAddress.Loopback, 53)))
             {
@@ -38,7 +44,8 @@ namespace Caching_DNS
                 while (!closed)
                 {
                     Thread.Sleep(1000);
-                    RemoveOldEntries(DomainToIpCache);
+                    RemoveOldEntries(CacheForTypeA);
+                    RemoveOldEntries(CacheForTypeNs);
                 }
             }
         }
@@ -47,12 +54,10 @@ namespace Caching_DNS
         {
             var toDelete = new List<string>();
             foreach (var record in cache)
-
             {
-                
                 var now = DateTime.Now;
                 var exp = record.Value.Answers[0].AbsoluteExpitationDate;
-              //  Console.WriteLine($"EXP: {exp}  NOW: {now}  <={exp<=now}");
+                //  Console.WriteLine($"EXP: {exp}  NOW: {now}  <={exp<=now}");
                 if (exp <= now)
                     toDelete.Add(record.Key);
             }
@@ -64,66 +69,68 @@ namespace Caching_DNS
             }
         }
 
-        private byte[] HandleRequest(IPEndPoint sender, byte[] data)
+        private byte[] HandleRequest(byte[] data)
         {
-            var packet = packetParser.Parse(data);
+            var query = new DnsPacket(data);
 
-            Console.WriteLine($"GOT:\n{packet}");
+            Console.WriteLine($"GOT:\n{query}");
 
-            if (packet.IsQuery)
-            {
-                foreach (var question in packet.Questions)
+            if (!query.IsQuery)
+                return null;
+            foreach (var question in query.Questions)
+                switch (question.Type)
                 {
-                    if (question.Type != ResourceType.A && question.Type != ResourceType.NS)
-                    {
+                    case ResourceType.A:
+                        return FindCachedAnswerOrResend(query, CacheForTypeA);
+                    case ResourceType.NS:
+                        return FindCachedAnswerOrResend(query, CacheForTypeNs);
+                    default:
                         Console.Error.WriteLine(
                             $"Message with the type code {question.Type} is not currently supported!");
                         continue;
-                    }
-
-                    if (DomainToIpCache.ContainsKey(question.Name))
-                    {
-                        var cached = DomainToIpCache[question.Name];
-                        Console.WriteLine($"Sending pack from cache:\n{cached}");
-                        var updatedTtlData = GetPacketWIthUpdatedTtl(cached);
-                        var newId = packet.TransactionId;
-                        var oldId = cached.TransactionId;
-                        Console.WriteLine($"OLD ID: {oldId} NEW ID:{newId}");
-                        return UpdateTransactionId(updatedTtlData, newId);
-                    }
-
-                    using (var client = new UdpClient())
-                    {
-                        client.Send(data, data.Length, remoteDns);
-                        var response = client.Receive(ref remoteDns);
-                        var responsePacket = packetParser.Parse(response);
-                       Console.WriteLine($"RECEIVED:\n{responsePacket}");
-                        DomainToIpCache[question.Name] = responsePacket;
-                        return response;
-                    }
                 }
-            }
 
             return null;
         }
 
-        private byte[] UpdateTransactionId(byte[] updatedTtlData, uint newId)
+        private byte[] FindCachedAnswerOrResend(DnsPacket query, Dictionary<string, DnsPacket> cache)
+        {
+            return cache.TryGetValue(query.Questions[0].Name, out var cachedPacket)
+                ? UpdatePacketFromCache(cachedPacket, query.TransactionId)
+                : GetAnswerFromBetterServer(query.Data, cache);
+        }
+        private byte[] GetAnswerFromBetterServer(byte[] query, Dictionary<string, DnsPacket> cache)
+        {
+            using (var client = new UdpClient())
+            {
+                client.Send(query, query.Length, remoteDns);
+                var response = client.Receive(ref remoteDns);
+                var responsePacket = new DnsPacket(response);
+                Console.WriteLine($"RECEIVED:\n{responsePacket}");
+                cache[responsePacket.Questions[0].Name] = responsePacket;
+                return response;
+            }
+        }
+
+        private static byte[] UpdatePacketFromCache(DnsPacket packet, uint newId)
+        {
+            var updatedTtlData = UpdateTtl(packet);
+            var updated = UpdateTransactionId(updatedTtlData, newId);
+            Console.WriteLine($"MESSAGE FROM CACHE:\n{new DnsPacket(updated)}");
+            return updated;
+        }
+
+        private static byte[] UpdateTransactionId(byte[] data, uint newId)
         {
             var newIdB = BitConverter.GetBytes(newId.SwapEndianness());
-            for (int j = 2; j < newIdB.Length; j++)
-            {
-                updatedTtlData[DnsPacketFields.TransactionId + j - 2] = newIdB[j];
-            }
-
-            var pack = packetParser.Parse(updatedTtlData);
-            Console.WriteLine($"Id: {pack.TransactionId}");
-            return updatedTtlData;
+            for (var j = 2; j < newIdB.Length; j++)
+                data[DnsPacketFields.TransactionId + j - 2] = newIdB[j];
+            return data;
         }
 
 
-        private byte[] GetPacketWIthUpdatedTtl(DnsPacket packet)
+        private static byte[] UpdateTtl(DnsPacket packet)
         {
-            
             var dataToSend = packet.Data;
             for (var i = 0; i < packet.TtlIndexes.Count; i++)
             {
@@ -131,41 +138,52 @@ namespace Caching_DNS
                 var answer = packet.Answers[i];
                 var oldExpDate = answer.AbsoluteExpitationDate;
                 var now = DateTime.Now;
-                var newTtl = (UInt32)oldExpDate.Subtract(now).TotalSeconds;
+                var newTtl = (uint) oldExpDate.Subtract(now).TotalSeconds;
                 var newTtlB = BitConverter.GetBytes(newTtl.SwapEndianness());
                 Console.WriteLine($"Old TTL: {answer.Ttl} New TTL: {newTtl}");
-                for (int j = 0; j < newTtlB.Length; j++)
-                {
-                    dataToSend[index + j] = newTtlB[j];
-                }
+                for (var j = 0; j < newTtlB.Length; j++) dataToSend[index + j] = newTtlB[j];
             }
 
             return dataToSend;
         }
+
         public void Quit()
         {
+            Console.WriteLine("Saving data to ***...");
+            SerializeCache(CacheForTypeA, AFilename);
+            SerializeCache(CacheForTypeNs, NsFilename);
             closed = true;
             udpListener?.Dispose();
-            Console.WriteLine("Saving data to ***...");
-            //  SerializeCache(DomainToIpCache, D2IFilename);
-            // SerializeCache(IpToDomainCache, I2DFilename);
+
         }
 
         private void SerializeCache(Dictionary<string, DnsPacket> cache, string filename)
         {
             if (cache.Count == 0)
                 return;
-            File.WriteAllText(filename, JsonConvert.SerializeObject(cache));
+            var formatter = new BinaryFormatter();
+            using (var fs = new FileStream(filename, FileMode.OpenOrCreate))
+            {
+                formatter.Serialize(fs, cache);
+            }
         }
 
         private Dictionary<string, DnsPacket> DeserializeCache(string filename)
         {
             try
             {
-                var str = File.ReadAllText(filename);
-                return JsonConvert.DeserializeObject<Dictionary<string, DnsPacket>>(str);
+                var formatter = new BinaryFormatter();
+                using (var fs = new FileStream(filename, FileMode.Open))
+                {
+                    return (Dictionary<string, DnsPacket>) formatter.Deserialize(fs);
+                }
             }
+
             catch (FileNotFoundException e)
+            {
+                return new Dictionary<string, DnsPacket>();
+            }
+            catch (SerializationException e)
             {
                 return new Dictionary<string, DnsPacket>();
             }

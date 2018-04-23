@@ -1,7 +1,9 @@
-﻿using Caching_DNS.Helpers;
+﻿using System;
+using Caching_DNS.Helpers;
 
 namespace Caching_DNS.DnsQueries
 {
+    [Serializable]
     public class Question
     {
         public ResourceClass Class;

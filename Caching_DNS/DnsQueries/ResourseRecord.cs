@@ -4,6 +4,7 @@ using Caching_DNS.DnsStructure;
 
 namespace Caching_DNS.DnsQueries
 {
+    [Serializable]
     public class ResourseRecord
     {
         public string Name;
@@ -31,7 +32,7 @@ namespace Caching_DNS.DnsQueries
             return $"{Name}  {Type}  {Class}  Exp: {AbsoluteExpitationDate} Data: {Data}";
         }
     }
-
+    [Serializable]
     public class ResourseData
     {
         public IPAddress IpAddress;

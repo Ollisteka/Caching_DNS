@@ -1,7 +1,9 @@
-﻿using System.ComponentModel;
+﻿using System;
+using System.ComponentModel;
 
 namespace Caching_DNS.DnsQueries
 {
+    [Serializable]
     public enum ResourceType : ushort
     {
         [Description("A")]

@@ -75,7 +75,6 @@
     <Compile Include="DnsQueries\ResourseRecord.cs" />
     <Compile Include="DnsStructure\DnsPacket.cs" />
     <Compile Include="DnsStructure\DnsPacketFields.cs" />
-    <Compile Include="DnsStructure\DnsPacketParser.cs" />
     <Compile Include="DnsServer.cs" />
     <Compile Include="Helpers\Extensions.cs" />
     <Compile Include="Program.cs" />

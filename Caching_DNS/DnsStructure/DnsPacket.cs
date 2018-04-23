@@ -7,6 +7,7 @@ using Caching_DNS.Helpers;
 
 namespace Caching_DNS.DnsStructure
 {
+    [Serializable]
     public class DnsPacket
     {
         public readonly byte[] Data;
@@ -43,6 +44,8 @@ namespace Caching_DNS.DnsStructure
         public override string ToString()
         {
             var result = new StringBuilder("---\n");
+
+            result.AppendLine($"Id: {TransactionId}");
 
             if (QuestionNumber != 0)
                 result.AppendLine($"Questions:\n{string.Join("\n", Questions)}\n");

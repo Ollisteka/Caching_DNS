@@ -9,7 +9,7 @@ namespace Caching_DNS.Network
     {
         private const int ListenPort = 53;
         private readonly UdpClient listener;
-        public Func<IPEndPoint, byte[], byte[]> OnRequest;
+        public Func<byte[], byte[]> OnRequest;
         private bool closed = false;
 
         public UdpListener(IPEndPoint iPEndPoint)
@@ -35,7 +35,7 @@ namespace Caching_DNS.Network
                         Console.WriteLine("Waiting for message");
                         var bytes = listener.Receive(ref groupEP);
                         Console.WriteLine($"Received message from {groupEP}");
-                        var response = OnRequest?.Invoke(groupEP, bytes);
+                        var response = OnRequest?.Invoke(bytes);
 
                         if (response != null)
                         {

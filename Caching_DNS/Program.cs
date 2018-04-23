@@ -23,7 +23,7 @@ namespace Caching_DNS
                 if (Console.ReadKey().Key == ConsoleKey.Escape)
                 {
                     server.Quit();
-                    Environment.Exit(1);
+                    Environment.Exit(0);
                 }
         }
     }
