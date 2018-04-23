@@ -21,7 +21,8 @@ namespace Caching_DNS.DnsQueries
             Class = resClass;
             Ttl = ttl;
             DataLength = dataLength;
-            AbsoluteExpitationDate = DateTime.Now.AddSeconds(ttl);
+            var now = DateTime.Now;
+            AbsoluteExpitationDate =now.AddSeconds(ttl);
             Data = data;
         }
 
@@ -42,10 +43,11 @@ namespace Caching_DNS.DnsQueries
             NameServer = nameServer;
         }
 
-        public static ResourseData ParseAddressRecord(byte[] data, int offset)
+        public static ResourseData ParseAddressRecord(byte[] data, ref int offset)
         {
             var addressBytes = BitConverter.ToUInt32(data, offset);
             var address = new IPAddress(addressBytes);
+            offset += 4;
             return new ResourseData(address);
         }
 

@@ -16,9 +16,11 @@ namespace Caching_DNS.DnsStructure
         public uint Flags;
         public uint QuestionNumber;
 
+
         public List<Question> Questions = new List<Question>();
         public List<ResourseRecord> Answers = new List<ResourseRecord>();
         public List<ResourseRecord> AuthoritiveServers = new List<ResourseRecord>();
+        public List<int> TtlIndexes = new List<int>();
         private int totalOffset;
         public uint TransactionId;
 
@@ -57,6 +59,7 @@ namespace Caching_DNS.DnsStructure
 
         private void ParseFields()
         {
+            TransactionId = BitConverter.ToUInt16(Data, DnsPacketFields.TransactionId).SwapEndianness();
             QuestionNumber = BitConverter.ToUInt16(Data, DnsPacketFields.Questions).SwapEndianness();
             Flags = BitConverter.ToUInt16(Data, DnsPacketFields.Flags).SwapEndianness();
             AnswersNumber = BitConverter.ToUInt16(Data, DnsPacketFields.Answers).SwapEndianness();
@@ -81,6 +84,7 @@ namespace Caching_DNS.DnsStructure
                 var resClass = (ResourceClass)BitConverter.ToUInt16(Data, totalOffset).SwapEndianness();
                 totalOffset += 2;
                 var ttl = BitConverter.ToUInt32(Data, totalOffset).SwapEndianness();
+                TtlIndexes.Add(totalOffset);
                 totalOffset += 4;
                 var dataLength = BitConverter.ToUInt16(Data, totalOffset);
                 totalOffset += 2;
@@ -88,14 +92,14 @@ namespace Caching_DNS.DnsStructure
                 switch (type)
                 {
                     case ResourceType.A:
-                        data = ResourseData.ParseAddressRecord(Data, totalOffset);
+                        data = ResourseData.ParseAddressRecord(Data, ref totalOffset);
                         break;
                     case ResourceType.NS:
                         data = ResourseData.ParseNameServer(Data, ref totalOffset);
                         break;
                     default:
                         Console.Error.WriteLine($"Message with the type code {Convert.ToString((int)type, 16)} is not currently supported!");
-                        data = ResourseData.ParseAddressRecord(Data, totalOffset);
+                        data = ResourseData.ParseAddressRecord(Data, ref totalOffset);
                         break;
                 }
                 list.Add(new ResourseRecord(name, type, resClass, ttl, dataLength, data));
