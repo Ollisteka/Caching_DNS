@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Net;
 using System.Net.Sockets;
 using System.Runtime.Serialization;
@@ -16,13 +17,9 @@ namespace Caching_DNS
 {
     public class DnsServer
     {
-
-        private readonly Dictionary<string, DnsPacket> CacheForTypeA;
-
-        private readonly Dictionary<string, DnsPacket> CacheForTypeNs;
-
-        private const string AFilename = "CacheA.dat";
-        private const string NsFilename = "CacheNs.dat";
+        private const string CacheFilename = "cache.dat";
+        private static readonly ResourceType[] SupportedTypes = {ResourceType.A, ResourceType.NS};
+        private readonly Dictionary<ResourceType, Dictionary<string, DnsPacket>> cache;
 
         private bool closed;
         private IPEndPoint remoteDns = new IPEndPoint(IPAddress.Parse("8.8.8.8"), 53);
@@ -30,13 +27,11 @@ namespace Caching_DNS
 
         public DnsServer()
         {
-            CacheForTypeA = DeserializeCache(AFilename);
-            CacheForTypeNs = DeserializeCache(NsFilename);
+            cache = DeserializeCache();
         }
 
         public void Run()
         {
-
             using (udpListener = new UdpListener(new IPEndPoint(IPAddress.Loopback, 53)))
             {
                 udpListener.OnRequest += HandleRequest;
@@ -44,28 +39,28 @@ namespace Caching_DNS
                 while (!closed)
                 {
                     Thread.Sleep(1000);
-                    RemoveOldEntries(CacheForTypeA);
-                    RemoveOldEntries(CacheForTypeNs);
+                    RemoveOldEntries();
                 }
             }
         }
 
-        private void RemoveOldEntries(Dictionary<string, DnsPacket> cache)
+        private void RemoveOldEntries()
         {
-            var toDelete = new List<string>();
-            foreach (var record in cache)
+            var toDelete = new List<(ResourceType, string)>();
+            foreach (var recordType in cache)
+            foreach (var record in recordType.Value)
             {
                 var now = DateTime.Now;
                 var exp = record.Value.Answers[0].AbsoluteExpitationDate;
                 //  Console.WriteLine($"EXP: {exp}  NOW: {now}  <={exp<=now}");
                 if (exp <= now)
-                    toDelete.Add(record.Key);
+                    toDelete.Add((recordType.Key, record.Key));
             }
 
             foreach (var element in toDelete)
             {
-                Console.WriteLine("Deleting element from cache...");
-                cache.Remove(element);
+                Console.WriteLine($"Deleting {element.Item2} entry from cache...");
+                cache[element.Item1].Remove(element.Item2);
             }
         }
 
@@ -78,36 +73,44 @@ namespace Caching_DNS
             if (!query.IsQuery)
                 return null;
             foreach (var question in query.Questions)
-                switch (question.Type)
-                {
-                    case ResourceType.A:
-                        return FindCachedAnswerOrResend(query, CacheForTypeA);
-                    case ResourceType.NS:
-                        return FindCachedAnswerOrResend(query, CacheForTypeNs);
-                    default:
-                        Console.Error.WriteLine(
-                            $"Message with the type code {question.Type} is not currently supported!");
-                        continue;
-                }
+            {
+                if (SupportedTypes.Contains(question.Type))
+                    return FindCachedAnswerOrResend(query, cache[question.Type]);
+
+                Console.Error.WriteLine(
+                    $"Message with the type code {question.Type} is not currently supported!");
+            }
 
             return null;
         }
 
-        private byte[] FindCachedAnswerOrResend(DnsPacket query, Dictionary<string, DnsPacket> cache)
+        private byte[] FindCachedAnswerOrResend(DnsPacket query, Dictionary<string, DnsPacket> subCache)
         {
-            return cache.TryGetValue(query.Questions[0].Name, out var cachedPacket)
+            return subCache.TryGetValue(query.Questions[0].Name, out var cachedPacket)
                 ? UpdatePacketFromCache(cachedPacket, query.TransactionId)
-                : GetAnswerFromBetterServer(query.Data, cache);
+                : GetAnswerFromBetterServer(query.Data, subCache);
         }
-        private byte[] GetAnswerFromBetterServer(byte[] query, Dictionary<string, DnsPacket> cache)
+
+        private byte[] GetAnswerFromBetterServer(byte[] query, Dictionary<string, DnsPacket> subCache)
         {
             using (var client = new UdpClient())
             {
+                client.Client.ReceiveTimeout = 2000;
                 client.Send(query, query.Length, remoteDns);
-                var response = client.Receive(ref remoteDns);
+                byte[] response;
+                try
+                {
+                    response = client.Receive(ref remoteDns);
+                }
+                catch (SocketException)
+                {
+                    Console.Error.WriteLine("Couldn't connect ot the upper server. Check internet connection");
+                    return null;
+                }
+
                 var responsePacket = new DnsPacket(response);
                 Console.WriteLine($"RECEIVED:\n{responsePacket}");
-                cache[responsePacket.Questions[0].Name] = responsePacket;
+                subCache[responsePacket.Questions[0].Name] = responsePacket;
                 return response;
             }
         }
@@ -140,7 +143,7 @@ namespace Caching_DNS
                 var now = DateTime.Now;
                 var newTtl = (uint) oldExpDate.Subtract(now).TotalSeconds;
                 var newTtlB = BitConverter.GetBytes(newTtl.SwapEndianness());
-                Console.WriteLine($"Old TTL: {answer.Ttl} New TTL: {newTtl}");
+                //Console.WriteLine($"Old TTL: {answer.Ttl} New TTL: {newTtl}");
                 for (var j = 0; j < newTtlB.Length; j++) dataToSend[index + j] = newTtlB[j];
             }
 
@@ -149,43 +152,43 @@ namespace Caching_DNS
 
         public void Quit()
         {
-            Console.WriteLine("Saving data to ***...");
-            SerializeCache(CacheForTypeA, AFilename);
-            SerializeCache(CacheForTypeNs, NsFilename);
+            Console.WriteLine($"Saving data to {CacheFilename}...");
+            SerializeCache();
             closed = true;
             udpListener?.Dispose();
-
         }
 
-        private void SerializeCache(Dictionary<string, DnsPacket> cache, string filename)
+        private void SerializeCache()
         {
             if (cache.Count == 0)
                 return;
             var formatter = new BinaryFormatter();
-            using (var fs = new FileStream(filename, FileMode.OpenOrCreate))
+            using (var fs = new FileStream(CacheFilename, FileMode.OpenOrCreate))
             {
                 formatter.Serialize(fs, cache);
             }
         }
 
-        private Dictionary<string, DnsPacket> DeserializeCache(string filename)
+        private Dictionary<ResourceType, Dictionary<string, DnsPacket>> DeserializeCache()
         {
             try
             {
                 var formatter = new BinaryFormatter();
-                using (var fs = new FileStream(filename, FileMode.Open))
+                using (var fs = new FileStream(CacheFilename, FileMode.Open))
                 {
-                    return (Dictionary<string, DnsPacket>) formatter.Deserialize(fs);
+                    return (Dictionary<ResourceType, Dictionary<string, DnsPacket>>) formatter.Deserialize(fs);
                 }
             }
 
-            catch (FileNotFoundException e)
+            catch (FileNotFoundException)
             {
-                return new Dictionary<string, DnsPacket>();
+                return SupportedTypes.ToDictionary(supportedType => supportedType,
+                    supportedType => new Dictionary<string, DnsPacket>());
             }
-            catch (SerializationException e)
+            catch (SerializationException)
             {
-                return new Dictionary<string, DnsPacket>();
+                return SupportedTypes.ToDictionary(supportedType => supportedType,
+                    supportedType => new Dictionary<string, DnsPacket>());
             }
         }
     }
