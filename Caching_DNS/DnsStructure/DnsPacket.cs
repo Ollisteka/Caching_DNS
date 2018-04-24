@@ -81,7 +81,7 @@ namespace Caching_DNS.DnsStructure
         {
             for (int i = 0; i < count; i++)
             {
-                var name = ExtractString(Data, ref totalOffset);
+                var name = Data.ExtractDnsString(ref totalOffset);
                 var type = (ResourceType) BitConverter.ToUInt16(Data, totalOffset).SwapEndianness();
                 totalOffset += 2;
                 var resClass = (ResourceClass)BitConverter.ToUInt16(Data, totalOffset).SwapEndianness();
@@ -116,7 +116,7 @@ namespace Caching_DNS.DnsStructure
             for (var i = 0; i < QuestionNumber; i++)
             {
                 var question = new Question();
-                question.Name = ExtractString(Data, ref totalOffset);
+                question.Name = Data.ExtractDnsString(ref totalOffset);
                 question.Type = (ResourceType) BitConverter.ToUInt16(Data, totalOffset).SwapEndianness();
                 totalOffset += 2;
                 question.Class = (ResourceClass) BitConverter.ToUInt16(Data, totalOffset).SwapEndianness();
@@ -125,40 +125,6 @@ namespace Caching_DNS.DnsStructure
             }
         }
 
-        public static string ExtractString(byte[] data, ref int offset)
-        {
-            var result = new StringBuilder();
-            var compressionOffset = -1;
-            while (true)
-            {
-                var nextLength = data[offset];
-
-                if (nextLength == 0xc0)
-                {
-                    var firstPart = nextLength & 0b0011_1111;
-                    offset++;
-                    if (compressionOffset == -1) 
-                        compressionOffset = offset;
-                    
-                    offset = (firstPart << 8) | data[offset];
-                    nextLength = data[offset];
-                }
-                else if (nextLength == 0)
-                {
-                    if (compressionOffset != -1)
-                        offset = compressionOffset;
-
-                    offset++;
-                    break;
-                }
-                
-                offset++;
-                result.Append($"{Encoding.UTF8.GetString(data, offset, nextLength)}.");
-                offset += nextLength;
-                
-            }
-            
-            return result.ToString().Trim('.');
-        }
+        
     }
 }

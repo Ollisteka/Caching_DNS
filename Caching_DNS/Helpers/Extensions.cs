@@ -1,5 +1,6 @@
 ﻿using System;
 using System.ComponentModel;
+using System.Text;
 
 namespace Caching_DNS.Helpers
 {
@@ -38,6 +39,42 @@ namespace Caching_DNS.Helpers
         public static string Description(this Enum value)
         {
             return GetCustomDescription(value);
+        }
+
+        public static string ExtractDnsString(this byte[] data, ref int offset)
+        {
+            var result = new StringBuilder();
+            var compressionOffset = -1;
+            while (true)
+            {
+                var nextLength = data[offset];
+
+                if (nextLength == 0xc0)
+                {
+                    var firstPart = nextLength & 0b0011_1111;
+                    offset++;
+                    if (compressionOffset == -1)
+                        compressionOffset = offset;
+
+                    offset = (firstPart << 8) | data[offset];
+                    nextLength = data[offset];
+                }
+                else if (nextLength == 0)
+                {
+                    if (compressionOffset != -1)
+                        offset = compressionOffset;
+
+                    offset++;
+                    break;
+                }
+
+                offset++;
+                result.Append($"{Encoding.UTF8.GetString(data, offset, nextLength)}.");
+                offset += nextLength;
+
+            }
+
+            return result.ToString().Trim('.');
         }
     }
 }

@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Net;
 using Caching_DNS.DnsStructure;
+using Caching_DNS.Helpers;
 
 namespace Caching_DNS.DnsQueries
 {
@@ -54,7 +55,7 @@ namespace Caching_DNS.DnsQueries
 
         public static ResourseData ParseNameServer(byte[] data, ref int offset)
         {
-            var name = DnsPacket.ExtractString(data, ref offset);
+            var name = data.ExtractDnsString(ref offset);
             return new ResourseData(nameServer:name);
         }
 
