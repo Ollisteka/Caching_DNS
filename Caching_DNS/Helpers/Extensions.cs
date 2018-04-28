@@ -18,22 +18,24 @@ namespace Caching_DNS.Helpers
 
             return data;
         }
+
         public static ushort SwapEndianness(this ushort val)
         {
-            ushort value = (ushort)((val << 8) | (val >> 8));
+            var value = (ushort) ((val << 8) | (val >> 8));
             return value;
         }
 
         public static uint SwapEndianness(this uint val)
         {
-            uint value = (val << 24) | ((val << 8) & 0x00ff0000) | ((val >> 8) & 0x0000ff00) | (val >> 24);
+            var value = (val << 24) | ((val << 8) & 0x00ff0000) | ((val >> 8) & 0x0000ff00) | (val >> 24);
             return value;
         }
+
         public static string GetCustomDescription(object objEnum)
         {
             var fi = objEnum.GetType().GetField(objEnum.ToString());
-            var attributes = (DescriptionAttribute[])fi?.GetCustomAttributes(typeof(DescriptionAttribute), false);
-            return (attributes?.Length > 0) ? attributes[0].Description : objEnum.ToString();
+            var attributes = (DescriptionAttribute[]) fi?.GetCustomAttributes(typeof(DescriptionAttribute), false);
+            return attributes?.Length > 0 ? attributes[0].Description : objEnum.ToString();
         }
 
         public static string Description(this Enum value)
@@ -47,19 +49,19 @@ namespace Caching_DNS.Helpers
             var compressionOffset = -1;
             while (true)
             {
-                var nextLength = data[offset];
+                var pieceLength = data[offset];
 
-                if (nextLength == 0xc0)
+                if (pieceLength == 0xc0)
                 {
-                    var firstPart = nextLength & 0b0011_1111;
+                    var firstPart = pieceLength & 0b0011_1111;
                     offset++;
                     if (compressionOffset == -1)
                         compressionOffset = offset;
 
                     offset = (firstPart << 8) | data[offset];
-                    nextLength = data[offset];
+                    pieceLength = data[offset];
                 }
-                else if (nextLength == 0)
+                else if (pieceLength == 0)
                 {
                     if (compressionOffset != -1)
                         offset = compressionOffset;
@@ -69,9 +71,8 @@ namespace Caching_DNS.Helpers
                 }
 
                 offset++;
-                result.Append($"{Encoding.UTF8.GetString(data, offset, nextLength)}.");
-                offset += nextLength;
-
+                result.Append($"{Encoding.UTF8.GetString(data, offset, pieceLength)}.");
+                offset += pieceLength;
             }
 
             return result.ToString().Trim('.');

@@ -8,9 +8,8 @@ using System.Runtime.Serialization;
 using System.Runtime.Serialization.Formatters.Binary;
 using System.Threading;
 using System.Threading.Tasks;
-using Caching_DNS.DnsQueries;
 using Caching_DNS.DnsStructure;
-using Caching_DNS.Helpers;
+using Caching_DNS.Enums;
 using Caching_DNS.Network;
 
 namespace Caching_DNS
@@ -49,13 +48,9 @@ namespace Caching_DNS
             var toDelete = new List<(ResourceType, string)>();
             foreach (var recordType in cache)
             foreach (var record in recordType.Value)
-            {
-                var now = DateTime.Now;
-                var exp = record.Value.Answers[0].AbsoluteExpitationDate;
-                //  Console.WriteLine($"EXP: {exp}  NOW: {now}  <={exp<=now}");
-                if (exp <= now)
+                if (record.Value.IsOutdated())
                     toDelete.Add((recordType.Key, record.Key));
-            }
+
 
             foreach (var element in toDelete)
             {
@@ -72,6 +67,7 @@ namespace Caching_DNS
 
             if (!query.IsQuery)
                 return null;
+
             foreach (var question in query.Questions)
             {
                 if (SupportedTypes.Contains(question.Type))
@@ -117,38 +113,12 @@ namespace Caching_DNS
 
         private static byte[] UpdatePacketFromCache(DnsPacket packet, uint newId)
         {
-            var updatedTtlData = UpdateTtl(packet);
-            var updated = UpdateTransactionId(updatedTtlData, newId);
-            Console.WriteLine($"MESSAGE FROM CACHE:\n{new DnsPacket(updated)}");
-            return updated;
+            packet.UpdateTtl();
+            packet.UpdateTransactionId(newId);
+            Console.WriteLine($"MESSAGE FROM CACHE:\n{packet}");
+            return packet.Data;
         }
 
-        private static byte[] UpdateTransactionId(byte[] data, uint newId)
-        {
-            var newIdB = BitConverter.GetBytes(newId.SwapEndianness());
-            for (var j = 2; j < newIdB.Length; j++)
-                data[DnsPacketFields.TransactionId + j - 2] = newIdB[j];
-            return data;
-        }
-
-
-        private static byte[] UpdateTtl(DnsPacket packet)
-        {
-            var dataToSend = packet.Data;
-            for (var i = 0; i < packet.TtlIndexes.Count; i++)
-            {
-                var index = packet.TtlIndexes[i];
-                var answer = packet.Answers[i];
-                var oldExpDate = answer.AbsoluteExpitationDate;
-                var now = DateTime.Now;
-                var newTtl = (uint) oldExpDate.Subtract(now).TotalSeconds;
-                var newTtlB = BitConverter.GetBytes(newTtl.SwapEndianness());
-                //Console.WriteLine($"Old TTL: {answer.Ttl} New TTL: {newTtl}");
-                for (var j = 0; j < newTtlB.Length; j++) dataToSend[index + j] = newTtlB[j];
-            }
-
-            return dataToSend;
-        }
 
         public void Quit()
         {

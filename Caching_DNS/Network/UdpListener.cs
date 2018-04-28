@@ -1,7 +1,6 @@
 ﻿using System;
 using System.Net;
 using System.Net.Sockets;
-using System.Text;
 
 namespace Caching_DNS.Network
 {
@@ -9,8 +8,8 @@ namespace Caching_DNS.Network
     {
         private const int ListenPort = 53;
         private readonly UdpClient listener;
+        private bool closed;
         public Func<byte[], byte[]> OnRequest;
-        private bool closed = false;
 
         public UdpListener(IPEndPoint iPEndPoint)
         {
@@ -21,31 +20,26 @@ namespace Caching_DNS.Network
         {
             Console.WriteLine("Closing UDP listener");
             closed = true;
-           // listener.Close();
         }
 
         public void Start()
         {
             using (listener)
             {
-                var groupEP = new IPEndPoint(IPAddress.Any, ListenPort);
+                var sender = new IPEndPoint(IPAddress.Any, ListenPort);
                 while (!closed)
                     try
                     {
                         Console.WriteLine("Waiting for message");
-                        var bytes = listener.Receive(ref groupEP);
-                        Console.WriteLine($"Received message from {groupEP}");
+                        var bytes = listener.Receive(ref sender);
+                        Console.WriteLine($"Received message from {sender}");
                         var response = OnRequest?.Invoke(bytes);
 
-                        if (response != null)
-                        {
-                            Console.WriteLine($"Sending answer back to {groupEP}\n\n");
-                            listener.Send(response, response.Length, groupEP);
-                        }
+                        if (response == null) continue;
 
+                        Console.WriteLine($"Sending answer back to {sender}\n\n");
+                        listener.Send(response, response.Length, sender);
                     }
-
-
                     catch (Exception e)
                     {
                         Console.WriteLine(e.ToString());

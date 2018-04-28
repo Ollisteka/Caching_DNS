@@ -1,17 +1,15 @@
 ﻿using System;
-using System.Collections.Generic;
-using System.IO;
-using System.Linq;
 using System.Threading.Tasks;
 
 namespace Caching_DNS
 {
-    class Program
+    internal class Program
     {
         private static DnsServer server;
-        static void Main(string[] args)
+
+        private static void Main(string[] args)
         {
-            server = new DnsServer();
+            var server = new DnsServer();
             Task.Run(() => Quit());
             server.Run();
         }
