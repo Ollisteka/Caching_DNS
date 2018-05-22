@@ -9,7 +9,7 @@ namespace Caching_DNS
 
         private static void Main(string[] args)
         {
-            var server = new DnsServer();
+            server = new DnsServer();
             Task.Run(() => Quit());
             server.Run();
         }
