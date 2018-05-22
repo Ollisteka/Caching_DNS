@@ -18,7 +18,7 @@ namespace Caching_DNS.Network
 
         public void Dispose()
         {
-            Console.WriteLine("Closing UDP listener");
+            ConsolePainter.WriteWarning("Closing UDP listener");
             closed = true;
         }
 
@@ -30,9 +30,9 @@ namespace Caching_DNS.Network
                 while (!closed)
                     try
                     {
-                        Console.WriteLine("Waiting for message");
+                        Console.WriteLine("Waiting for message...");
                         var bytes = listener.Receive(ref sender);
-                        Console.WriteLine($"Received message from {sender}");
+                        Console.WriteLine($"Received message from {sender}\n");
                         var response = OnRequest?.Invoke(bytes);
 
                         if (response == null) continue;

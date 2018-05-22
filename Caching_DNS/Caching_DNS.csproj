@@ -73,6 +73,7 @@
     <Reference Include="System.Xml" />
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="ConsolePainter.cs" />
     <Compile Include="DnsQueries\AddressData.cs" />
     <Compile Include="DnsQueries\IData.cs" />
     <Compile Include="DnsQueries\ResourseRecord.cs" />

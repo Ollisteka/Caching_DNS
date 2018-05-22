@@ -27,6 +27,12 @@ namespace Caching_DNS
         public DnsServer()
         {
             cache = DeserializeCache();
+            var total = 0;
+            foreach (var kvp in cache)
+                foreach (var _ in kvp.Value.Values)
+                    total++;
+              
+            ConsolePainter.WriteWarning($"Deserialized {total} entries");
         }
 
         public void Run()
@@ -54,7 +60,7 @@ namespace Caching_DNS
 
             foreach (var element in toDelete)
             {
-                Console.WriteLine($"Deleting {element.Item2} entry from cache...");
+                ConsolePainter.WriteWarning($"Deleting {element.Item2} entry from cache...");
                 cache[element.Item1].Remove(element.Item2);
             }
         }
@@ -63,7 +69,7 @@ namespace Caching_DNS
         {
             var query = new DnsPacket(data);
 
-            Console.WriteLine($"GOT:\n{query}");
+            ConsolePainter.WriteRequest($"GOT:\n{query}");
 
             if (!query.IsQuery)
                 return null;
@@ -73,7 +79,7 @@ namespace Caching_DNS
                 if (SupportedTypes.Contains(question.Type))
                     return FindCachedAnswerOrResend(query, cache[question.Type]);
 
-                Console.Error.WriteLine(
+                ConsolePainter.WriteWarning(
                     $"Message with the type code {question.Type} is not currently supported!");
             }
 
@@ -100,12 +106,12 @@ namespace Caching_DNS
                 }
                 catch (SocketException)
                 {
-                    Console.Error.WriteLine("Couldn't connect ot the upper server. Check internet connection");
+                    ConsolePainter.WriteWarning("Couldn't connect to the upper server. Check internet connection");
                     return null;
                 }
 
                 var responsePacket = new DnsPacket(response);
-                Console.WriteLine($"RECEIVED:\n{responsePacket}");
+                ConsolePainter.WriteResponse($"SENDING:\n{responsePacket}");
                 subCache[responsePacket.Questions[0].Name] = responsePacket;
                 return response;
             }
@@ -115,14 +121,14 @@ namespace Caching_DNS
         {
             packet.UpdateTtl();
             packet.UpdateTransactionId(newId);
-            Console.WriteLine($"MESSAGE FROM CACHE:\n{packet}");
+            ConsolePainter.WriteResponse($"MESSAGE FROM CACHE:\n{packet}");
             return packet.Data;
         }
 
 
         public void Quit()
         {
-            Console.WriteLine($"Saving data to {CacheFilename}...");
+            ConsolePainter.WriteWarning($"Saving data to {CacheFilename}...");
             SerializeCache();
             closed = true;
             udpListener?.Dispose();
