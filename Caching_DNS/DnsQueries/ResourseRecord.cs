@@ -15,7 +15,7 @@ namespace Caching_DNS.DnsQueries
         public readonly ResourceType Type;
 
         public ResourseRecord(string name, ResourceType type, ResourceClass resClass, uint ttl, ushort dataLength,
-            IData data)
+            IData data, byte[] bytes)
         {
             Name = name;
             Type = type;
@@ -25,7 +25,10 @@ namespace Caching_DNS.DnsQueries
             var now = DateTime.Now;
             AbsoluteExpitationDate = now.AddSeconds(ttl);
             Data = data;
+            Bytes = bytes;
         }
+
+        public readonly byte[] Bytes;
 
         public override string ToString()
         {

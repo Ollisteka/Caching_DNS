@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.ComponentModel;
 using System.Text;
 
@@ -29,6 +30,33 @@ namespace Caching_DNS.Helpers
         {
             var value = (val << 24) | ((val << 8) & 0x00ff0000) | ((val >> 8) & 0x0000ff00) | (val >> 24);
             return value;
+        }
+
+        public static void CopyTo(this byte[] data, List<byte> list, int index)
+        {
+            for (int i = 0; i < data.Length; i++)
+            {
+                while (i + index >= list.Count)
+                    list.Add(0);
+                list[index + i] = data[i];
+            }
+        }
+
+        public static void CopyTo(this byte b, List<byte> list, int index)
+        {
+            
+                while (index >= list.Count)
+                    list.Add(0);
+                list[index] = b;
+            
+        }
+        public static byte[] GetBytes(this ushort val)
+        {
+            return BitConverter.GetBytes(val);
+        }
+        public static byte[] GetBytes(this uint val)
+        {
+            return BitConverter.GetBytes(val);
         }
 
         public static string GetCustomDescription(object objEnum)
