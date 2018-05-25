@@ -7,57 +7,13 @@ namespace Caching_DNS.Helpers
 {
     public static class Extensions
     {
-        public static byte[] SwapEndianness(byte[] data, int offset = 0)
-        {
-            var tmp = data[offset];
-            data[offset] = data[offset + 3];
-            data[offset + 3] = tmp;
-
-            tmp = data[offset + 1];
-            data[offset + 1] = data[offset + 2];
-            data[offset + 2] = tmp;
-
-            return data;
-        }
-
-        public static ushort SwapEndianness(this ushort val)
-        {
-            var value = (ushort) ((val << 8) | (val >> 8));
-            return value;
-        }
-
-        public static uint SwapEndianness(this uint val)
-        {
-            var value = (val << 24) | ((val << 8) & 0x00ff0000) | ((val >> 8) & 0x0000ff00) | (val >> 24);
-            return value;
-        }
-
-        public static void CopyTo(this byte[] data, List<byte> list, int index)
-        {
-            for (int i = 0; i < data.Length; i++)
-            {
-                while (i + index >= list.Count)
-                    list.Add(0);
-                list[index + i] = data[i];
-            }
-        }
-
         public static void CopyTo(this byte b, List<byte> list, int index)
         {
-            
-                while (index >= list.Count)
-                    list.Add(0);
-                list[index] = b;
-            
+            while (index >= list.Count)
+                list.Add(0);
+            list[index] = b;
         }
-        public static byte[] GetBytes(this ushort val)
-        {
-            return BitConverter.GetBytes(val);
-        }
-        public static byte[] GetBytes(this uint val)
-        {
-            return BitConverter.GetBytes(val);
-        }
+
 
         public static string GetCustomDescription(object objEnum)
         {
@@ -79,7 +35,7 @@ namespace Caching_DNS.Helpers
             {
                 var pieceLength = data[offset];
 
-                if (pieceLength == 0xc0)
+                if ((pieceLength & 0b1100_0000) == 0xc0)
                 {
                     var firstPart = pieceLength & 0b0011_1111;
                     offset++;

@@ -1,5 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Net;
@@ -90,10 +89,11 @@ namespace Caching_DNS
 
         private byte[] FindCachedAnswerOrResend(DnsPacket query, Dictionary<string, DnsPacket> subCache)
         {
-            if (query.Questions[0].Type == ResourceType.NS && !subCache.ContainsKey(query.Questions[0].Name) &&
+            if (query.Questions[0].Type == ResourceType.NS &&
+                !cache[ResourceType.NS].ContainsKey(query.Questions[0].Name) &&
                 TryFindNsInA(query, out var cachedPacket))
             {
-                var gen = DnsPacket.GenerateAnswer((ushort) query.TransactionId, query.Questions,
+                var gen = DnsPacket.GenerateAnswer(query.TransactionId, query.Questions,
                     cachedPacket.AuthoritiveServers);
                 ConsolePainter.WriteResponse($"Modified from cache:\n{gen}");
                 return gen.Data;
@@ -148,7 +148,7 @@ namespace Caching_DNS
             }
         }
 
-        private static byte[] UpdatePacketFromCache(DnsPacket packet, uint newId)
+        private static byte[] UpdatePacketFromCache(DnsPacket packet, ushort newId)
         {
             packet.UpdateTtl();
             packet.UpdateTransactionId(newId);

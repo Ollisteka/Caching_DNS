@@ -13,24 +13,26 @@ namespace Caching_DNS.DnsStructure
     {
         public readonly byte[] Data;
         private readonly List<int> ttlIndexes = new List<int>();
-        public uint AdditionalNumber;
+
         public List<ResourseRecord> Answers = new List<ResourseRecord>();
-        public uint AnswersNumber;
         public List<ResourseRecord> AuthoritiveServers = new List<ResourseRecord>();
-        public uint AuthorityNumber;
-        public uint Flags;
-        public uint QuestionNumber;
-
-
         public List<Question> Questions = new List<Question>();
+
         private int totalOffset;
-        public uint TransactionId;
 
         public DnsPacket(byte[] data)
         {
             Data = data;
             ParseFields();
         }
+
+        public uint Flags => Data.GetUInt16(DnsPacketFields.Flags);
+
+        public ushort TransactionId => Data.GetUInt16(DnsPacketFields.TransactionId);
+        public ushort QuestionNumber => Data.GetUInt16(DnsPacketFields.Questions);
+        public ushort AnswersNumber => Data.GetUInt16(DnsPacketFields.Answers);
+        public ushort AuthorityNumber => Data.GetUInt16(DnsPacketFields.Authority);
+        public ushort AdditionalNumber => Data.GetUInt16(DnsPacketFields.Additional);
 
         public uint Opcode => (Flags & 0b0111_1000_0000_0000) >> 11;
         public uint ReplyCode => Flags & 0b0000_0000_0000_1111;
@@ -83,76 +85,70 @@ namespace Caching_DNS.DnsStructure
             {
                 var index = ttlIndexes[i];
                 var answer = Answers[i];
-                var oldExpDate = answer.AbsoluteExpitationDate;
-                var now = DateTime.Now;
-                var newTtl = (uint) oldExpDate.Subtract(now).TotalSeconds;
-                var newTtlB = BitConverter.GetBytes(newTtl.SwapEndianness());
-                for (var j = 0; j < newTtlB.Length; j++) Data[index + j] = newTtlB[j];
+                var updatedTtl = GetUpdatedTll(answer.AbsoluteExpitationDate);
+                for (var j = 0; j < updatedTtl.Length; j++) Data[index + j] = updatedTtl[j];
             }
         }
 
-        public void UpdateTransactionId(uint newId)
+        public void UpdateTransactionId(ushort newId)
         {
-            TransactionId = newId;
-            var newIdB = BitConverter.GetBytes(newId.SwapEndianness());
-            for (var j = 2; j < newIdB.Length; j++)
-                Data[DnsPacketFields.TransactionId + j - 2] = newIdB[j];
+            var newIdB = newId.GetSwappedBytes();
+            newIdB.CopyTo(Data, DnsPacketFields.TransactionId);
         }
 
-        private static void EncodeString(Dictionary<string, int> map, string  str, List<byte> data, ref int offset)
+        private static void EncodeString(Dictionary<string, int> map, string str, List<byte> data, ref int offset)
         {
-            if (!map.ContainsKey(str))
+            if (map.ContainsKey(str))
             {
-                var parts = str.Split('.').Where(s => s != "").ToList();
+                EncodeKnownString(map, data, str, ref offset);
+                return;
+            }
 
-                for (var i = 0; i < parts.Count; i++)
+            var parts = str.Split('.').Where(s => s != "").ToList();
+            for (var i = 0; i < parts.Count; i++)
+            {
+                var suffix = string.Join(".", parts.Skip(i));
+
+                if (!map.ContainsKey(suffix))
                 {
-                    var suffix = string.Join(".", parts.Skip(i));
-                    if (suffix != "")
-                    {
-                        if (!map.ContainsKey(suffix))
-                            map[suffix] = offset;
-                        else
-                        {
-                            EncodeKnownString(suffix, data, ref offset, map);
-                            return;
-                        }
-                    }
-
+                    map[suffix] = offset;
                     var part = parts[i];
-                    EncodeSimpleString(part, data, ref offset);
+                    EncodePartOfString(data, part, ref offset);
                 }
-                ((byte)0).CopyTo(data, offset++);
+                else
+                {
+                    EncodeKnownString(map, data, suffix, ref offset);
+                    return;
+                }
             }
-            else
-            {
-                EncodeKnownString(str, data, ref offset, map);
-            }
+
+            data.AddByte(0, offset++);
         }
 
-        private static void EncodeKnownString(string str, List<byte> data, ref int offset, Dictionary<string, int> map)
+        private static void EncodeKnownString(Dictionary<string, int> map, List<byte> data, string str, ref int offset)
         {
-            ((byte)192).CopyTo(data, offset++);
-            ((byte)map[str]).CopyTo(data, offset++);
+            data.AddByte(192, offset++);
+            data.AddByte(map[str], offset++);
         }
-        private static void EncodeSimpleString(string str, List<byte> data, ref int offset)
+
+        private static void EncodePartOfString(List<byte> data, string str, ref int offset)
         {
             var decoded = Encoding.UTF8.GetBytes(str);
-            var length = ((ushort)decoded.Length).SwapEndianness().GetBytes()[1];
-            
+            var length = ((ushort) decoded.Length).SwapEndianness().GetBytes()[1];
             length.CopyTo(data, offset++);
             decoded.CopyTo(data, offset);
             offset += decoded.Length;
         }
+
         public static DnsPacket GenerateAnswer(ushort id, List<Question> questions,
             List<ResourseRecord> authoritiveServers)
         {
             var map = new Dictionary<string, int>();
             var data = new List<byte>();
-            var idb = BitConverter.GetBytes(id.SwapEndianness());
-            var flags = BitConverter.GetBytes(((ushort) (0b1000_0100_0000_0000)).SwapEndianness());
-            var qNum = BitConverter.GetBytes(((ushort) questions.Count).SwapEndianness());
-            var ansNum = BitConverter.GetBytes(((ushort) authoritiveServers.Count).SwapEndianness());
+            var idb = id.GetSwappedBytes();
+            var flags = ((ushort) 0b1000_0100_0000_0000).GetSwappedBytes();
+            var qNum = ((ushort) questions.Count).GetSwappedBytes();
+            var ansNum = ((ushort) authoritiveServers.Count).GetSwappedBytes();
             idb.CopyTo(data, DnsPacketFields.TransactionId);
             flags.CopyTo(data, DnsPacketFields.Flags);
             qNum.CopyTo(data, DnsPacketFields.Questions);
@@ -160,30 +156,27 @@ namespace Caching_DNS.DnsStructure
             var offset = DnsPacketFields.Queries;
             foreach (var question in questions)
             {
-                
                 EncodeString(map, question.Name, data, ref offset);
-                var type = ((ushort) question.Type).SwapEndianness().GetBytes();
+                var type = ((ushort) question.Type).GetSwappedBytes();
                 type.CopyTo(data, offset);
                 offset += 2;
-                var rClass = ((ushort) question.Class).SwapEndianness().GetBytes();
+                var rClass = ((ushort) question.Class).GetSwappedBytes();
                 rClass.CopyTo(data, offset);
                 offset += 2;
             }
 
             foreach (var answer in authoritiveServers)
             {
-                
                 EncodeString(map, answer.Name, data, ref offset);
-               
-                var type = ((ushort)answer.Type).SwapEndianness().GetBytes();
+
+                var type = ((ushort) answer.Type).SwapEndianness().GetBytes();
                 type.CopyTo(data, offset);
                 offset += 2;
-                var rClass = ((ushort)answer.Class).SwapEndianness().GetBytes();
+                var rClass = ((ushort) answer.Class).SwapEndianness().GetBytes();
                 rClass.CopyTo(data, offset);
                 offset += 2;
-                var oldExpDate = answer.AbsoluteExpitationDate;
-                var now = DateTime.Now;
-                var newTtl = ((uint)oldExpDate.Subtract(now).TotalSeconds).SwapEndianness().GetBytes();
+
+                var newTtl = GetUpdatedTll(answer.AbsoluteExpitationDate);
                 newTtl.CopyTo(data, offset);
                 offset += 4;
                 var rdatal = answer.DataLength.GetBytes();
@@ -191,21 +184,19 @@ namespace Caching_DNS.DnsStructure
                 offset += rdatal.Length;
                 if (answer.Data is ServerNameData serverNData)
                     EncodeString(map, serverNData.NameServer, data, ref offset);
-                    
-                
             }
 
             return new DnsPacket(data.ToArray());
         }
 
+        private static byte[] GetUpdatedTll(DateTime absoluteExpirationDate)
+        {
+            var now = DateTime.Now;
+            return ((uint) absoluteExpirationDate.Subtract(now).TotalSeconds).GetSwappedBytes();
+        }
+
         private void ParseFields()
         {
-            TransactionId = BitConverter.ToUInt16(Data, DnsPacketFields.TransactionId).SwapEndianness();
-            QuestionNumber = BitConverter.ToUInt16(Data, DnsPacketFields.Questions).SwapEndianness();
-            Flags = BitConverter.ToUInt16(Data, DnsPacketFields.Flags).SwapEndianness();
-            AnswersNumber = BitConverter.ToUInt16(Data, DnsPacketFields.Answers).SwapEndianness();
-            AuthorityNumber = BitConverter.ToUInt16(Data, DnsPacketFields.Authority).SwapEndianness();
-            AdditionalNumber = BitConverter.ToUInt16(Data, DnsPacketFields.Additional).SwapEndianness();
             totalOffset = DnsPacketFields.Queries;
             if (QuestionNumber > 0)
                 ParseQuestions();
@@ -219,7 +210,6 @@ namespace Caching_DNS.DnsStructure
         {
             for (var i = 0; i < count; i++)
             {
-                var start = totalOffset;
                 var name = Data.ExtractDnsString(ref totalOffset);
                 var type = (ResourceType) BitConverter.ToUInt16(Data, totalOffset).SwapEndianness();
                 totalOffset += 2;
@@ -246,9 +236,7 @@ namespace Caching_DNS.DnsStructure
                         break;
                 }
 
-                var finish = totalOffset;
-                list.Add(new ResourseRecord(name, type, resClass, ttl, dataLength, data,
-                    Data.Skip(start).Take(finish - start).ToArray()));
+                list.Add(new ResourseRecord(name, type, resClass, ttl, dataLength, data));
             }
         }
 
