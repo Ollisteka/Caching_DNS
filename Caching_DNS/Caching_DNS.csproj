@@ -81,7 +81,9 @@
     <Compile Include="DnsStructure\DnsPacket.cs" />
     <Compile Include="DnsStructure\DnsPacketFields.cs" />
     <Compile Include="DnsServer.cs" />
+    <Compile Include="Helpers\EnumerableOfBytesExtensions.cs" />
     <Compile Include="Helpers\Extensions.cs" />
+    <Compile Include="Helpers\IntExtensions.cs" />
     <Compile Include="Program.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="DnsQueries\Question.cs" />

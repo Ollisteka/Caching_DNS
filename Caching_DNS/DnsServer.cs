@@ -1,5 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Net;
@@ -26,12 +25,14 @@ namespace Caching_DNS
 
         public DnsServer()
         {
+            var dnsips = Dns.GetHostAddresses("ns1.e1.ru");
+            remoteDns = new IPEndPoint(dnsips[0], 53);
             cache = DeserializeCache();
             var total = 0;
             foreach (var kvp in cache)
-                foreach (var _ in kvp.Value.Values)
-                    total++;
-              
+            foreach (var _ in kvp.Value.Values)
+                total++;
+
             ConsolePainter.WriteWarning($"Deserialized {total} entries");
         }
 
@@ -88,9 +89,39 @@ namespace Caching_DNS
 
         private byte[] FindCachedAnswerOrResend(DnsPacket query, Dictionary<string, DnsPacket> subCache)
         {
-            return subCache.TryGetValue(query.Questions[0].Name, out var cachedPacket)
+            if (query.Questions[0].Type == ResourceType.NS &&
+                !cache[ResourceType.NS].ContainsKey(query.Questions[0].Name) &&
+                TryFindNsInA(query, out var cachedPacket))
+            {
+                var gen = DnsPacket.GenerateAnswer(query.TransactionId, query.Questions,
+                    cachedPacket.AuthoritiveServers);
+                ConsolePainter.WriteResponse($"Modified from cache:\n{gen}");
+                return gen.Data;
+            }
+
+            return subCache.TryGetValue(query.Questions[0].Name, out cachedPacket)
                 ? UpdatePacketFromCache(cachedPacket, query.TransactionId)
                 : GetAnswerFromBetterServer(query.Data, subCache);
+        }
+
+        private bool TryFindNsInA(DnsPacket query, out DnsPacket cached)
+        {
+            if (query.Questions[0].Type == ResourceType.NS)
+            {
+                var aRecords = cache[ResourceType.A];
+                foreach (var kvp in aRecords)
+                {
+                    if (!query.Questions.Select(q => q.Name).Intersect(kvp.Value.Questions.Select(k => k.Name)).Any())
+                        continue;
+                    if (kvp.Value.AuthoritiveServers.Count == 0)
+                        continue;
+                    cached = kvp.Value;
+                    return true;
+                }
+            }
+
+            cached = null;
+            return false;
         }
 
         private byte[] GetAnswerFromBetterServer(byte[] query, Dictionary<string, DnsPacket> subCache)
@@ -117,7 +148,7 @@ namespace Caching_DNS
             }
         }
 
-        private static byte[] UpdatePacketFromCache(DnsPacket packet, uint newId)
+        private static byte[] UpdatePacketFromCache(DnsPacket packet, ushort newId)
         {
             packet.UpdateTtl();
             packet.UpdateTransactionId(newId);
