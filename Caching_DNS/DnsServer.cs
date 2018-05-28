@@ -1,4 +1,5 @@
-﻿using System.Collections.Generic;
+﻿using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Net;
@@ -7,6 +8,7 @@ using System.Runtime.Serialization;
 using System.Runtime.Serialization.Formatters.Binary;
 using System.Threading;
 using System.Threading.Tasks;
+using Caching_DNS.DnsQueries;
 using Caching_DNS.DnsStructure;
 using Caching_DNS.Enums;
 using Caching_DNS.Network;
@@ -16,7 +18,7 @@ namespace Caching_DNS
     public class DnsServer
     {
         private const string CacheFilename = "cache.dat";
-        private static readonly ResourceType[] SupportedTypes = {ResourceType.A, ResourceType.NS};
+        private static readonly ResourceType[] SupportedTypes = { ResourceType.A, ResourceType.NS };
         private readonly Dictionary<ResourceType, Dictionary<string, DnsPacket>> cache;
 
         private bool closed;
@@ -30,8 +32,8 @@ namespace Caching_DNS
             cache = DeserializeCache();
             var total = 0;
             foreach (var kvp in cache)
-            foreach (var _ in kvp.Value.Values)
-                total++;
+                foreach (var _ in kvp.Value.Values)
+                    total++;
 
             ConsolePainter.WriteWarning($"Deserialized {total} entries");
         }
@@ -54,9 +56,9 @@ namespace Caching_DNS
         {
             var toDelete = new List<(ResourceType, string)>();
             foreach (var recordType in cache)
-            foreach (var record in recordType.Value)
-                if (record.Value.IsOutdated())
-                    toDelete.Add((recordType.Key, record.Key));
+                foreach (var record in recordType.Value)
+                    if (record.Value.IsOutdated())
+                        toDelete.Add((recordType.Key, record.Key));
 
 
             foreach (var element in toDelete)
@@ -89,40 +91,62 @@ namespace Caching_DNS
 
         private byte[] FindCachedAnswerOrResend(DnsPacket query, Dictionary<string, DnsPacket> subCache)
         {
-            if (query.Questions[0].Type == ResourceType.NS &&
-                !cache[ResourceType.NS].ContainsKey(query.Questions[0].Name) &&
-                TryFindNsInA(query, out var cachedPacket))
-            {
-                var gen = DnsPacket.GenerateAnswer(query.TransactionId, query.Questions,
-                    cachedPacket.AuthoritiveServers);
-                ConsolePainter.WriteResponse($"Modified from cache:\n{gen}");
-                return gen.Data;
-            }
+            if (TryModifyCache(query, out var cachedPacket))
+                return cachedPacket.Data;
 
             return subCache.TryGetValue(query.Questions[0].Name, out cachedPacket)
                 ? UpdatePacketFromCache(cachedPacket, query.TransactionId)
                 : GetAnswerFromBetterServer(query.Data, subCache);
         }
 
-        private bool TryFindNsInA(DnsPacket query, out DnsPacket cached)
+        private bool TryModifyCache(DnsPacket query, out DnsPacket cached)
         {
-            if (query.Questions[0].Type == ResourceType.NS)
+            var question = query.Questions[0];
+            if (cache[question.Type].TryGetValue(question.Name, out cached))
             {
-                var aRecords = cache[ResourceType.A];
-                foreach (var kvp in aRecords)
-                {
-                    if (!query.Questions.Select(q => q.Name).Intersect(kvp.Value.Questions.Select(k => k.Name)).Any())
-                        continue;
-                    if (kvp.Value.AuthoritiveServers.Count == 0)
-                        continue;
-                    cached = kvp.Value;
-                    return true;
-                }
+                ConsolePainter.WriteResponse($"MESSAGE FROM CACHE:\n{cached}");
+                return true;
+            }
+
+            if (TryFindRightCachedRecord(query, out cached))
+            {
+                var gen = DnsPacket.GenerateAnswer(query.TransactionId, query.Questions,
+                    question.Type == ResourceType.A ? cached.AdditionalRecords : cached.AuthoritiveServers);
+
+                ConsolePainter.WriteResponse($"Modified from cache:\n{gen}");
+                cached = gen;
+                cache[query.Questions[0].Type].Add(query.Questions[0].Name, gen);
+                return true;
             }
 
             cached = null;
             return false;
         }
+
+
+        private bool TryFindRightCachedRecord(DnsPacket query, out DnsPacket cached)
+        {
+            var aRecords = cache[ResourceType.A];
+            var questions = query.Questions.Select(q => q.Name).ToList();
+
+            bool IsCorrectRecord(List<ResourseRecord> rec)
+            {
+                return rec.Count != 0 && questions.Intersect(rec.Select(k => k.Name))
+                           .Any();
+            }
+
+            foreach (var kvp in aRecords)
+            {
+                if (!IsCorrectRecord(kvp.Value.AdditionalRecords) && !IsCorrectRecord(kvp.Value.AuthoritiveServers))
+                    continue;
+                cached = kvp.Value;
+                return true;
+            }
+
+            cached = null;
+            return false;
+        }
+
 
         private byte[] GetAnswerFromBetterServer(byte[] query, Dictionary<string, DnsPacket> subCache)
         {
@@ -183,7 +207,7 @@ namespace Caching_DNS
                 var formatter = new BinaryFormatter();
                 using (var fs = new FileStream(CacheFilename, FileMode.Open))
                 {
-                    return (Dictionary<ResourceType, Dictionary<string, DnsPacket>>) formatter.Deserialize(fs);
+                    return (Dictionary<ResourceType, Dictionary<string, DnsPacket>>)formatter.Deserialize(fs);
                 }
             }
 

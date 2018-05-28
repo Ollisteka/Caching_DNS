@@ -5,6 +5,7 @@ using System.Text;
 using Caching_DNS.DnsQueries;
 using Caching_DNS.Enums;
 using Caching_DNS.Helpers;
+#pragma warning disable 618
 
 namespace Caching_DNS.DnsStructure
 {
@@ -16,6 +17,7 @@ namespace Caching_DNS.DnsStructure
 
         public List<ResourseRecord> Answers = new List<ResourseRecord>();
         public List<ResourseRecord> AuthoritiveServers = new List<ResourseRecord>();
+        public List<ResourseRecord> AdditionalRecords = new List<ResourseRecord>();
         public List<Question> Questions = new List<Question>();
 
         private int totalOffset;
@@ -65,6 +67,9 @@ namespace Caching_DNS.DnsStructure
 
             if (AuthorityNumber != 0)
                 result.AppendLine($"Authorative nameservers:\n{string.Join("\n", AuthoritiveServers)}\n");
+
+            if (AdditionalNumber != 0)
+                result.AppendLine($"Additional records:\n{string.Join("\n", AdditionalRecords)}\n");
 
             result.AppendLine("---");
             return result.ToString();
@@ -141,14 +146,14 @@ namespace Caching_DNS.DnsStructure
         }
 
         public static DnsPacket GenerateAnswer(ushort id, List<Question> questions,
-            List<ResourseRecord> authoritiveServers)
+            List<ResourseRecord> answers)
         {
             var map = new Dictionary<string, int>();
             var data = new List<byte>();
             var idb = id.GetSwappedBytes();
             var flags = ((ushort) 0b1000_0100_0000_0000).GetSwappedBytes();
             var qNum = ((ushort) questions.Count).GetSwappedBytes();
-            var ansNum = ((ushort) authoritiveServers.Count).GetSwappedBytes();
+            var ansNum = ((ushort) answers.Count).GetSwappedBytes();
             idb.CopyTo(data, DnsPacketFields.TransactionId);
             flags.CopyTo(data, DnsPacketFields.Flags);
             qNum.CopyTo(data, DnsPacketFields.Questions);
@@ -165,7 +170,7 @@ namespace Caching_DNS.DnsStructure
                 offset += 2;
             }
 
-            foreach (var answer in authoritiveServers)
+            foreach (var answer in answers)
             {
                 EncodeString(map, answer.Name, data, ref offset);
 
@@ -182,8 +187,17 @@ namespace Caching_DNS.DnsStructure
                 var rdatal = answer.DataLength.GetBytes();
                 rdatal.CopyTo(data, offset);
                 offset += rdatal.Length;
-                if (answer.Data is ServerNameData serverNData)
-                    EncodeString(map, serverNData.NameServer, data, ref offset);
+                switch (answer.Data)
+                {
+                    case ServerNameData serverNData:
+                        EncodeString(map, serverNData.NameServer, data, ref offset);
+                        break;
+                    case AddressData addressData:
+                        var ipBytes = BitConverter.GetBytes((uint) addressData.IpAddress.Address);
+                        ipBytes.CopyTo(data, offset);
+                        offset += 4;
+                        break;
+                }
             }
 
             return new DnsPacket(data.ToArray());
@@ -204,6 +218,8 @@ namespace Caching_DNS.DnsStructure
                 ParseAnswers(Answers, AnswersNumber);
             if (AuthorityNumber > 0)
                 ParseAnswers(AuthoritiveServers, AuthorityNumber);
+            if (AdditionalNumber > 0)
+                ParseAnswers(AdditionalRecords, AdditionalNumber);
         }
 
         private void ParseAnswers(List<ResourseRecord> list, uint count)
