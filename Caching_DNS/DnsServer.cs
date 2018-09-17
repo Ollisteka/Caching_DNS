@@ -92,7 +92,7 @@ namespace Caching_DNS
         private byte[] FindCachedAnswerOrResend(DnsPacket query, Dictionary<string, DnsPacket> subCache)
         {
             if (TryModifyCache(query, out var cachedPacket))
-                return cachedPacket.Data;
+                return UpdatePacketFromCache(cachedPacket, query.TransactionId);
 
             return subCache.TryGetValue(query.Questions[0].Name, out cachedPacket)
                 ? UpdatePacketFromCache(cachedPacket, query.TransactionId)
